@@ -27,7 +27,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"time"
 
 	"go.uber.org/zap"
@@ -59,7 +58,7 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger.Panic("wechat config error", zap.Any("error", err))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
-		proxy(client, logger)
+		hijack(client, logger)
 		logger.Info("Proxy Running...", zap.String("addr", viper.GetString("proxy_addr")))
 		logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(
 			viper.GetString("proxy_addr"),
@@ -90,10 +89,25 @@ func randStringRunes(n int) string {
 	return string(b)
 }
 
-func proxy(c *core.Client, l *zap.Logger) {
+func hijack(c *core.Client, l *zap.Logger) {
+	sugar := l.Sugar()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		requestId := randStringRunes(40)
 		w.Header().Set("X-REQUEST-ID", requestId)
+
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, errResult(-2, "not a hijacker"), http.StatusInternalServerError)
+			return
+		}
+
+		in, _, err := hj.Hijack()
+		if err != nil {
+			l.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
+			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
+			return
+		}
+		defer in.Close()
 
 		r.URL.Scheme = "https"
 		r.URL.Host = "api.weixin.qq.com:443"
@@ -101,25 +115,39 @@ func proxy(c *core.Client, l *zap.Logger) {
 		v.Set("access_token", c.FetchToken())
 		r.URL.RawQuery = v.Encode()
 
-		dial, err := net.Dial("tcp", r.URL.Host)
-		tls_conn := tls.Client(dial, &tls.Config{
+		conn, err := net.Dial("tcp", r.URL.Host)
+		if err != nil {
+			l.Error("Proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
+			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
+			return
+		}
+		defer conn.Close()
+		out := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: false,
 			ServerName:         "api.weixin.qq.com", //must config, see tls.config
 		})
-		conn := httputil.NewClientConn(tls_conn, nil)
-		rsp, err := conn.Do(r)
-		l.Sugar().Infof("Request: %v", r)
+		defer out.Close()
+		err = r.Write(out)
 		if err != nil {
 			l.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 			http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
-		} else {
-			for k, v := range rsp.Header {
-				for _, h := range v {
-					w.Header().Set(k, h)
-				}
-			}
-			w.WriteHeader(rsp.StatusCode)
-			io.Copy(w, rsp.Body)
+			return
+		}
+
+		errc := make(chan error, 2)
+		cp := func(dst io.Writer, src io.Reader) {
+			len, err := io.Copy(dst, src)
+			l.Info("body copy length", zap.Int64("length", len))
+			errc <- err
+		}
+
+		sugar.Infof("Request: %v", r)
+
+		go cp(out, in)
+		go cp(in, out)
+		err = <-errc
+		if err != nil && err != io.EOF {
+			l.Error("proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 		}
 	})
 }
