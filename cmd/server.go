@@ -136,8 +136,7 @@ func hijack(c *core.Client, l *zap.Logger) {
 
 		errc := make(chan error, 2)
 		cp := func(dst io.Writer, src io.Reader) {
-			len, err := io.Copy(dst, src)
-			l.Info("body copy length", zap.Int64("length", len))
+			_, err := io.Copy(dst, src)
 			errc <- err
 		}
 
