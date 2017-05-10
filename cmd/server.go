@@ -24,11 +24,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/lvzhihao/wechat/core"
 	"github.com/spf13/cobra"
@@ -46,19 +47,23 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		//logger
+		logger, _ := zap.NewProduction()
+		defer logger.Sync() // flushes buffer, if any
+		//wechat client
 		client, err := core.New(&core.ClientConfig{
 			AppId:          viper.GetString("app_id"),
 			AppSecret:      viper.GetString("app_secret"),
 			DefaultTimeout: 10 * time.Second,
 		})
+		//wechat config error, panic
 		if err != nil {
-			log.Fatal(err)
+			logger.Panic("wechat config error", zap.Any("error", err))
 		}
-		log.Printf("Connecting..., token is %s\n", client.FetchToken())
-		hijack(client)
-		log.Printf("Server run at %s\n", ":9099")
-		log.Fatal(http.ListenAndServeTLS(":9099", "./pem/server.cert", "./pem/server.key", nil))
-		//log.Fatal(http.ListenAndServe(":9099", nil))
+		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
+		hijack(client, logger)
+		logger.Info("Proxy Running...", zap.String("addr", ":9099"))
+		logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(":9099", "./pem/server.cert", "./pem/server.key", nil)))
 	},
 }
 
@@ -73,7 +78,8 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func hijack(c *core.Client) {
+func hijack(c *core.Client, l *zap.Logger) {
+	sugar := l.Sugar()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -83,7 +89,7 @@ func hijack(c *core.Client) {
 
 		in, _, err := hj.Hijack()
 		if err != nil {
-			log.Printf("[ERROR] Hijack error for %s. %s", r.URL, err)
+			l.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err))
 			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
 			return
 		}
@@ -98,12 +104,12 @@ func hijack(c *core.Client) {
 		dial, err := net.Dial("tcp", r.URL.Host)
 		tls_conn := tls.Client(dial, &tls.Config{
 			InsecureSkipVerify: false,
-			ServerName:         "api.weixin.qq.com",
+			ServerName:         "api.weixin.qq.com", //must config, see tls.config
 		})
 		out, _ := httputil.NewClientConn(tls_conn, nil).Hijack()
 		err = r.Write(out)
 		if err != nil {
-			log.Printf("[ERROR] Error copying request for %s. %s", r.URL, err)
+			l.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err))
 			http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
 			return
 		}
@@ -115,13 +121,13 @@ func hijack(c *core.Client) {
 			errc <- err
 		}
 
-		log.Printf("[DEBUG] %v\n", r)
+		sugar.Debugf("Request: %v", r)
 
 		go cp(out, in)
 		go cp(in, out)
 		err = <-errc
 		if err != nil && err != io.EOF {
-			log.Printf("[INFO] WS error for %s. %s", r.URL, err)
+			l.Error("proxy error", zap.Any("url", r.URL), zap.Error(err))
 		}
 	})
 }

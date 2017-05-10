@@ -27,7 +27,7 @@ type ClientError struct {
 }
 
 func (e *ClientError) String() string {
-	return fmt.Sprintf("ErrCode: %s; ErrMsg: %s", e.ErrCode, e.ErrMsg)
+	return fmt.Sprintf("ErrCode: %d; ErrMsg: %s", e.ErrCode, e.ErrMsg)
 }
 
 type ClientConfig struct {
