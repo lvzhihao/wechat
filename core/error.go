@@ -2,6 +2,7 @@ package core
 
 var (
 	ErrorCode = map[string]string{
-		"-1": "系统繁忙，此时请开发者稍候再试",
+		"-2": "自定义错误",
+		// -1 start wechat global error
 	}
 )

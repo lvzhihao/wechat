@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	API map[string]string = map[string]string{
+	BaseApis map[string]string = map[string]string{
 		"TOKEN":      "https://api.weixin.qq.com/cgi-bin/token?grant_type=%s&appid=%s&secret=%s",
 		"CALLBACKIP": "https://api.weixin.qq.com/cgi-bin/getcallbackip?access_token=%s",
 	}
@@ -21,7 +21,7 @@ type AccessToken struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-func (t *AccessToken) Token() string {
+func (t *AccessToken) Get() string {
 	return t.AccessToken
 	//todo refersh token
 }
@@ -79,16 +79,16 @@ func New(config *ClientConfig) (*Client, *ClientError) {
 }
 
 func (c *Client) FetchToken() string {
-	return c.Token.Token()
+	return c.Token.Get()
 }
 
 func (c *Client) RefreshToken() *ClientError {
-	b, err := c.Request(fmt.Sprintf(API["TOKEN"], "client_credential", c.Config.AppId, c.Config.AppSecret), nil)
+	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.Config.AppId, c.Config.AppSecret), nil)
 	if err != nil {
 		return err
 	}
 	eerr := json.Unmarshal(b, &c.Token)
-	if eerr == nil && c.Token.Token() != "" {
+	if eerr == nil && c.Token.Get() != "" {
 		return nil
 	} else {
 		var retErr ClientError
