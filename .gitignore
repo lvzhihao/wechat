@@ -24,3 +24,7 @@ pem
 *.exe
 *.test
 *.prof
+
+*.swa
+*.swp
+*.swo

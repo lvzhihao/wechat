@@ -10,7 +10,7 @@ type CallbackIpList struct {
 }
 
 func GetCallbackIpList(c *Client) (*CallbackIpList, *ClientError) {
-	b, err := c.Request(fmt.Sprintf(BaseApis["CALLBACKIP"], c.Token.Get()), nil)
+	b, err := c.Request(fmt.Sprintf(BaseApis["CALLBACKIP"], c.FetchToken()), nil)
 	if err != nil {
 		return nil, err
 	}

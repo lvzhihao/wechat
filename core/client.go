@@ -21,11 +21,6 @@ type AccessToken struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-func (t *AccessToken) Get() string {
-	return t.AccessToken
-	//todo refersh token
-}
-
 type ClientError struct {
 	ErrCode int64  `json:"errcode"`
 	ErrMsg  string `json:"errmsg"`
@@ -42,10 +37,10 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	Config  *ClientConfig `json:"config"`
-	Token   AccessToken   `json:"token"`
-	TokenLk *sync.Mutex
-	Error   []ClientError `json:"error"`
+	config *ClientConfig `json:"config"`
+	token  AccessToken   `json:"token"`
+	lock   sync.Mutex    `json:"-"`
+	Error  []ClientError `json:"error"`
 }
 
 //todo time.After refresh Tokeno
@@ -54,13 +49,13 @@ type Client struct {
 func New(config *ClientConfig) (*Client, *ClientError) {
 	if config.AppId == "" {
 		return nil, &ClientError{
-			ErrCode: 10000,
+			ErrCode: -2,
 			ErrMsg:  "缺少AppID",
 		}
 	}
 	if config.AppSecret == "" {
 		return nil, &ClientError{
-			ErrCode: 10001,
+			ErrCode: -2,
 			ErrMsg:  "缺少AppSecret",
 		}
 	}
@@ -68,7 +63,7 @@ func New(config *ClientConfig) (*Client, *ClientError) {
 		config.DefaultTimeout = 10 * time.Second
 	}
 	client := &Client{
-		Config: config,
+		config: config,
 	}
 	err := client.RefreshToken()
 	if err != nil {
@@ -78,17 +73,26 @@ func New(config *ClientConfig) (*Client, *ClientError) {
 	}
 }
 
+func (c *Client) Token() string {
+	return c.FetchToken()
+}
+
 func (c *Client) FetchToken() string {
-	return c.Token.Get()
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.token.ExpiresIn > time.Now().Unix()-10 {
+		c.RefreshToken()
+	}
+	return c.token.AccessToken
 }
 
 func (c *Client) RefreshToken() *ClientError {
-	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.Config.AppId, c.Config.AppSecret), nil)
+	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.config.AppId, c.config.AppSecret), nil)
 	if err != nil {
 		return err
 	}
-	eerr := json.Unmarshal(b, &c.Token)
-	if eerr == nil && c.Token.Get() != "" {
+	eerr := json.Unmarshal(b, &c.token)
+	if eerr == nil && c.token.AccessToken != "" {
 		return nil
 	} else {
 		var retErr ClientError
@@ -103,7 +107,7 @@ func (c *Client) RefreshToken() *ClientError {
 
 func (c *Client) Request(url string, b []byte) ([]byte, *ClientError) {
 	client := &http.Client{
-		Timeout: c.Config.DefaultTimeout,
+		Timeout: c.config.DefaultTimeout,
 	}
 	resp, err := client.Get(url)
 	if err != nil {

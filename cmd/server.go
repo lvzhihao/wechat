@@ -54,7 +54,7 @@ to quickly create a Cobra application.`,
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("Connecting..., token is %s\n", client.Token.Get())
+		log.Printf("Connecting..., token is %s\n", client.FetchToken())
 		hijack(client)
 		log.Printf("Server run at %s\n", ":9099")
 		log.Fatal(http.ListenAndServeTLS(":9099", "./pem/server.cert", "./pem/server.key", nil))
@@ -92,7 +92,7 @@ func hijack(c *core.Client) {
 		r.URL.Scheme = "https"
 		r.URL.Host = "api.weixin.qq.com:443"
 		v := r.URL.Query()
-		v.Set("access_token", c.Token.Get())
+		v.Set("access_token", c.FetchToken())
 		r.URL.RawQuery = v.Encode()
 
 		dial, err := net.Dial("tcp", r.URL.Host)
