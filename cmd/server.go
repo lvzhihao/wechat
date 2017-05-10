@@ -59,7 +59,7 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger.Panic("wechat config error", zap.Any("error", err))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
-		hijack(client, logger)
+		proxy(client, logger)
 		logger.Info("Proxy Running...", zap.String("addr", viper.GetString("proxy_addr")))
 		logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(
 			viper.GetString("proxy_addr"),
@@ -90,25 +90,10 @@ func randStringRunes(n int) string {
 	return string(b)
 }
 
-func hijack(c *core.Client, l *zap.Logger) {
-	sugar := l.Sugar()
+func proxy(c *core.Client, l *zap.Logger) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		requestId := randStringRunes(40)
 		w.Header().Set("X-REQUEST-ID", requestId)
-
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, errResult(-2, "not a hijacker"), http.StatusInternalServerError)
-			return
-		}
-
-		in, _, err := hj.Hijack()
-		if err != nil {
-			l.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-			return
-		}
-		defer in.Close()
 
 		r.URL.Scheme = "https"
 		r.URL.Host = "api.weixin.qq.com:443"
@@ -121,28 +106,20 @@ func hijack(c *core.Client, l *zap.Logger) {
 			InsecureSkipVerify: false,
 			ServerName:         "api.weixin.qq.com", //must config, see tls.config
 		})
-		out, _ := httputil.NewClientConn(tls_conn, nil).Hijack()
-		err = r.Write(out)
+		conn := httputil.NewClientConn(tls_conn, nil)
+		rsp, err := conn.Do(r)
+		l.Sugar().Infof("Request: %v", r)
 		if err != nil {
 			l.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 			http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
-			return
-		}
-		defer out.Close()
-
-		errc := make(chan error, 2)
-		cp := func(dst io.Writer, src io.Reader) {
-			_, err := io.Copy(dst, src)
-			errc <- err
-		}
-
-		sugar.Debugf("Request: %v", r)
-
-		go cp(out, in)
-		go cp(in, out)
-		err = <-errc
-		if err != nil && err != io.EOF {
-			l.Error("proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
+		} else {
+			for k, v := range rsp.Header {
+				for _, h := range v {
+					w.Header().Set(k, h)
+				}
+			}
+			w.WriteHeader(rsp.StatusCode)
+			io.Copy(w, rsp.Body)
 		}
 	})
 }
