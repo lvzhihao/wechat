@@ -24,14 +24,19 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/hashicorp/consul/api"
 	"github.com/lvzhihao/wechat/core"
+	"github.com/lvzhihao/wechat/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -47,25 +52,91 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		//logger
 		logger, _ := zap.NewProduction()
 		defer logger.Sync() // flushes buffer, if any
-		//wechat client
-		client, err := core.New(&core.ClientConfig{
-			AppId:          viper.GetString("app_id"),
-			AppSecret:      viper.GetString("app_secret"),
+		//wechat ulClientlient
+		client, eerr := core.New(&core.ClientConfig{
+			AppId:          viper.GetString("appid"),
+			AppSecret:      viper.GetString("secret"),
 			DefaultTimeout: 10 * time.Second,
 		})
 		//wechat config error, panic
-		if err != nil {
-			logger.Panic("wechat config error", zap.Any("error", err))
+		if eerr != nil {
+			logger.Panic("wechat config error", zap.Any("error", eerr))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
 		hijack(client, logger)
-		logger.Info("Proxy Running...", zap.String("addr", viper.GetString("proxy_addr")))
-		logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(
-			viper.GetString("proxy_addr"),
-			viper.GetString("tls_cert"),
-			viper.GetString("tls_key"),
-			nil,
-		)))
+		health()
+		service_id := "wproxy-" + viper.GetString("addr")
+		var consulClient *api.Client
+		if viper.GetString("consul") != "" {
+			var err error
+			consulClient, err = api.NewClient(&api.Config{
+				Address: viper.GetString("consul"),
+				Scheme:  "http",
+				Token:   viper.GetString("token"),
+			})
+			if err != nil {
+				logger.Panic("consul config error", zap.Error(err))
+			}
+			checkScheme := "http"
+			if viper.GetString("cert") != "" {
+				checkScheme = "https"
+			}
+			addrList := strings.Split(viper.GetString("addr"), ":")
+			host := addrList[0]
+			port, _ := strconv.Atoi(addrList[1])
+			err = consulClient.Agent().ServiceRegister(&api.AgentServiceRegistration{
+				ID:      service_id,
+				Name:    "wproxy-" + strconv.Itoa(port),
+				Port:    port,
+				Address: host,
+				Tags:    []string{"v1", "proxy"},
+				Check: &api.AgentServiceCheck{
+					HTTP:     checkScheme + "://" + viper.GetString("addr") + "/health",
+					Interval: "1s",
+					Timeout:  "1s",
+				},
+			})
+			if err != nil {
+				logger.Panic("consul register error", zap.Error(err))
+			} else {
+				logger.Info("Register service in consul", zap.String("servcie_id", service_id))
+			}
+		}
+		logger.Info("Proxy Running...", zap.String("addr", viper.GetString("addr")))
+
+		go func() {
+			quit := make(chan os.Signal, 1)
+			signal.Notify(quit, os.Interrupt, os.Kill)
+			for {
+				<-quit
+				if viper.GetString("consul") != "" {
+					err := consulClient.Agent().ServiceDeregister(service_id)
+					if err != nil {
+						logger.Fatal("consul deregister error", zap.Error(err))
+					} else {
+						logger.Info("Deregister service in consul", zap.String("servcie_id", service_id))
+					}
+				}
+				/*
+					ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+					server.Shutdown(ctx)
+				*/
+				os.Exit(1)
+			}
+		}()
+		if viper.GetString("cert") != "" {
+			logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(
+				viper.GetString("addr"),
+				viper.GetString("cert"),
+				viper.GetString("key"),
+				nil,
+			)))
+		} else {
+			logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServe(
+				viper.GetString("addr"),
+				nil,
+			)))
+		}
 	},
 }
 
@@ -80,19 +151,16 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func randStringRunes(n int) string {
-	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(b)
+func health() {
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
 }
 
 func hijack(c *core.Client, l *zap.Logger) {
 	sugar := l.Sugar()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		requestId := randStringRunes(40)
+		requestId := utils.RandStringRunes(40)
 		w.Header().Set("X-REQUEST-ID", requestId)
 
 		hj, ok := w.(http.Hijacker)
@@ -154,8 +222,6 @@ func hijack(c *core.Client, l *zap.Logger) {
 func init() {
 	RootCmd.AddCommand(serverCmd)
 
-	rand.Seed(time.Now().UnixNano())
-
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
@@ -165,9 +231,18 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// serverCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	viper.Set("app_id", serverCmd.Flags().String("app_id", "", "第三方用户唯一凭证"))
-	viper.Set("app_secret", serverCmd.Flags().String("app_secret", "", "第三方用户唯一凭证密钥"))
-	viper.Set("proxy_addr", serverCmd.Flags().String("proxy_addr", ":9099", "代理监听地址"))
-	viper.Set("tls_cert", serverCmd.Flags().String("tls_cert", "./pem/server.cert", "ssl证书"))
-	viper.Set("tls_key", serverCmd.Flags().String("tls_key", "./pem/server.key", "ssl证书"))
+	serverCmd.Flags().String("appid", "", "第三方用户唯一凭证")
+	serverCmd.Flags().String("secret", "", "第三方用户唯一凭证密钥")
+	serverCmd.Flags().String("addr", "127.0.0.1:9099", "代理监听地址")
+	serverCmd.Flags().String("cert", "", "ssl证书")
+	serverCmd.Flags().String("key", "", "ssl证书")
+	serverCmd.Flags().String("consul", "", "consul api")
+	serverCmd.Flags().String("token", "", "consul acl token")
+	viper.BindPFlag("appid", serverCmd.Flags().Lookup("appid"))
+	viper.BindPFlag("secret", serverCmd.Flags().Lookup("secret"))
+	viper.BindPFlag("addr", serverCmd.Flags().Lookup("addr"))
+	viper.BindPFlag("cert", serverCmd.Flags().Lookup("cert"))
+	viper.BindPFlag("key", serverCmd.Flags().Lookup("key"))
+	viper.BindPFlag("consul", serverCmd.Flags().Lookup("consul"))
+	viper.BindPFlag("token", serverCmd.Flags().Lookup("token"))
 }
