@@ -14,6 +14,15 @@
 			"Rev": "4da3e2cfbabc9f751898f250b49f2439785783a1"
 		},
 		{
+			"ImportPath": "github.com/hashicorp/consul/api",
+			"Comment": "v0.6.4-39-g3340d7c",
+			"Rev": "3340d7ccd74d4185b1c126833988457da5e414c8"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/go-cleanhttp",
+			"Rev": "3573b8b52aa7b37b9358d966a898feb387f62437"
+		},
+		{
 			"ImportPath": "github.com/hashicorp/hcl",
 			"Rev": "9a905a34e6280ce905da1a32344b25e81011197a"
 		},
@@ -48,6 +57,11 @@
 		{
 			"ImportPath": "github.com/hashicorp/hcl/json/token",
 			"Rev": "9a905a34e6280ce905da1a32344b25e81011197a"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/serf/coordinate",
+			"Comment": "v0.8.1-39-g65c2bab",
+			"Rev": "65c2babe73c7a096cd24e9eeec67613eb4e436c9"
 		},
 		{
 			"ImportPath": "github.com/inconshreveable/mousetrap",
