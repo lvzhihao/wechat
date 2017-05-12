@@ -23,7 +23,9 @@ package cmd
 import (
 	"crypto/tls"
 	"encoding/json"
+	"encoding/xml"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -50,7 +52,8 @@ var serverCmd = &cobra.Command{
 wechat server --app_id=xxxx --app_secret=xxxx`,
 	Run: func(cmd *cobra.Command, args []string) {
 		//logger
-		logger, _ := zap.NewProduction()
+		//logger, _ := zap.NewProduction()
+		logger, _ := zap.NewDevelopment()
 		defer logger.Sync() // flushes buffer, if any
 		//wechat ulClientlient
 		client, eerr := core.New(&core.ClientConfig{
@@ -63,8 +66,9 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger.Panic("wechat config error", zap.Any("error", eerr))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
-		hijack(client, logger)
-		health()
+		proxy(client, logger)
+		receive(logger)
+		health(logger)
 		service_id := "wproxy-" + viper.GetString("addr")
 		var consulClient *api.Client
 		if viper.GetString("consul") != "" {
@@ -151,13 +155,58 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func health() {
+func health(l *zap.Logger) {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
 }
 
-func hijack(c *core.Client, l *zap.Logger) {
+func receive(l *zap.Logger) {
+	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
+		if core.ReceiveMsgCheckSign(viper.GetString("token"), r) {
+			q := r.URL.Query()
+			if q.Get("echostr") != "" {
+				w.Write([]byte(q.Get("echostr")))
+			} else {
+				data, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					l.Error("request body empty", zap.Error(err))
+					http.NotFound(w, r)
+				} else {
+					l.Debug("request body ", zap.String("body", string(data)))
+					var msg core.Msg
+					err := xml.Unmarshal(data, &msg)
+					if err != nil {
+						l.Error("request body except", zap.Error(err))
+						http.NotFound(w, r)
+					} else {
+						l.Debug("xml content", zap.Any("xml", msg))
+						//todo
+						ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
+							ToUserName:   msg.FromUserName,
+							FromUserName: msg.ToUserName,
+							CreateTime:   int(time.Now().Unix()),
+							MsgType:      "text",
+						}, Content: "replay test"}
+						b, err := xml.Marshal(ret)
+						if err != nil {
+							l.Error("msg reply error", zap.Error(err))
+							//retry todo
+							w.Write([]byte("success"))
+						} else {
+							l.Debug("msg reply", zap.String("xml", string(b)))
+							w.Write(b)
+						}
+					}
+				}
+			}
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+}
+
+func proxy(c *core.Client, l *zap.Logger) {
 	sugar := l.Sugar()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		requestId := utils.RandStringRunes(40)
@@ -237,12 +286,14 @@ func init() {
 	serverCmd.Flags().String("cert", "", "ssl证书")
 	serverCmd.Flags().String("key", "", "ssl证书")
 	serverCmd.Flags().String("consul", "", "consul api")
-	serverCmd.Flags().String("token", "", "consul acl token")
+	serverCmd.Flags().String("consul_token", "", "consul acl token")
+	serverCmd.Flags().String("token", "", "msg receive token")
 	viper.BindPFlag("appid", serverCmd.Flags().Lookup("appid"))
 	viper.BindPFlag("secret", serverCmd.Flags().Lookup("secret"))
 	viper.BindPFlag("addr", serverCmd.Flags().Lookup("addr"))
 	viper.BindPFlag("cert", serverCmd.Flags().Lookup("cert"))
 	viper.BindPFlag("key", serverCmd.Flags().Lookup("key"))
 	viper.BindPFlag("consul", serverCmd.Flags().Lookup("consul"))
+	viper.BindPFlag("consul_token", serverCmd.Flags().Lookup("consul_token"))
 	viper.BindPFlag("token", serverCmd.Flags().Lookup("token"))
 }
