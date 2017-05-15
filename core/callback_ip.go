@@ -9,8 +9,8 @@ type CallbackIpList struct {
 	IpList []string `json:"ip_list"`
 }
 
-func GetCallbackIpList(c *Client) (*CallbackIpList, *ClientError) {
-	b, err := c.Request(fmt.Sprintf(BaseApis["CALLBACKIP"], c.FetchToken()), nil)
+func (c *Client) GetCallbackIpList() (*CallbackIpList, *ClientError) {
+	b, err := c.Request(fmt.Sprintf(BaseApis["CALLBACKIP"], c.FetchToken()))
 	if err != nil {
 		return nil, err
 	}

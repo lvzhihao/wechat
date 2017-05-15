@@ -87,7 +87,7 @@ func (c *Client) FetchToken() string {
 }
 
 func (c *Client) RefreshToken() *ClientError {
-	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.config.AppId, c.config.AppSecret), nil)
+	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.config.AppId, c.config.AppSecret))
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func (c *Client) RefreshToken() *ClientError {
 	}
 }
 
-func (c *Client) Request(url string, b []byte) ([]byte, *ClientError) {
+func (c *Client) Request(url string) ([]byte, *ClientError) {
 	client := &http.Client{
 		Timeout: c.config.DefaultTimeout,
 	}

@@ -24,10 +24,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -67,6 +69,7 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
 		proxy(client, logger)
+		oauth(client, logger)
 		receive(logger)
 		health(logger)
 		service_id := "wproxy-" + viper.GetString("addr")
@@ -155,6 +158,41 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
+func oauth(c *core.Client, l *zap.Logger) {
+	//todo
+	//key secret 验证，此处key secret为proxy服务所设置
+	http.HandleFunc("/connect/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
+		p := fmt.Sprintf(
+			"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=snsapi_userinfo&state=%s#wechat_redirect",
+			viper.GetString("appid"),
+			url.QueryEscape(fmt.Sprintf("https://lv.dev.yaoh.cc/connect/oauth2/callback")),
+			url.QueryEscape(r.URL.Query().Get("redirect_uri")),
+		)
+		l.Info("oauth authorize", zap.String("url", p))
+		http.Redirect(w, r, p, 302)
+	})
+	http.HandleFunc("/connect/oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
+		l.Sugar().Infof("Request: %v", r)
+		userToken, eerr := c.GetUserAccessToken(r.URL.Query().Get("code"))
+		if eerr != nil {
+			l.Error("Fetch token error", zap.Any("error", eerr))
+			http.Redirect(w, r, r.URL.Query().Get("state"), 302)
+			return
+		}
+		l.Debug("token response", zap.Any("token", userToken))
+		userInfo, eerr := c.GetUserInfoByToken(userToken)
+		l.Debug("userinfo", zap.Any("user", userInfo))
+		w.Write([]byte("ok"))
+	})
+
+	http.HandleFunc("/connect/oauth2/access_token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	http.HandleFunc("/connect/oauth2/refresh_token", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+}
+
 func health(l *zap.Logger) {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
@@ -181,22 +219,25 @@ func receive(l *zap.Logger) {
 						http.NotFound(w, r)
 					} else {
 						l.Debug("xml content", zap.Any("xml", msg))
+						w.Write(nil)
 						//todo
-						ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
-							ToUserName:   msg.FromUserName,
-							FromUserName: msg.ToUserName,
-							CreateTime:   int(time.Now().Unix()),
-							MsgType:      "text",
-						}, Content: "replay test"}
-						b, err := xml.Marshal(ret)
-						if err != nil {
-							l.Error("msg reply error", zap.Error(err))
-							//retry todo
-							w.Write([]byte("success"))
-						} else {
-							l.Debug("msg reply", zap.String("xml", string(b)))
-							w.Write(b)
-						}
+						/*
+								ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
+									ToUserName:   msg.FromUserName,
+									FromUserName: msg.ToUserName,
+									CreateTime:   int(time.Now().Unix()),
+									MsgType:      "text",
+								}, Content: "replay test"}
+								b, err := xml.Marshal(ret)
+							if err != nil {
+								l.Error("msg reply error", zap.Error(err))
+								//retry todo
+								w.Write([]byte("success"))
+							} else {
+								l.Debug("msg reply", zap.String("xml", string(b)))
+								w.Write(b)
+							}
+						*/
 					}
 				}
 			}

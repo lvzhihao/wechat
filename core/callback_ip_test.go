@@ -2,12 +2,10 @@ package core_test
 
 import (
 	"testing"
-
-	"github.com/lvzhihao/wechat/core"
 )
 
 func Test002CallbackIp(t *testing.T) {
-	ips, err := core.GetCallbackIpList(testClient)
+	ips, err := testClient.GetCallbackIpList()
 	if err != nil {
 		t.Error(err)
 	} else {
