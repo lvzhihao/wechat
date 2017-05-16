@@ -87,21 +87,15 @@ func (c *Client) FetchToken() string {
 }
 
 func (c *Client) RefreshToken() *ClientError {
-	b, err := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.config.AppId, c.config.AppSecret))
-	if err != nil {
-		return err
+	b, eerr := c.Request(fmt.Sprintf(BaseApis["TOKEN"], "client_credential", c.config.AppId, c.config.AppSecret))
+	if eerr != nil {
+		return eerr
 	}
-	eerr := json.Unmarshal(b, &c.token)
-	if eerr == nil && c.token.AccessToken != "" {
+	err := json.Unmarshal(b, &c.token)
+	if err == nil && c.token.AccessToken != "" {
 		return nil
 	} else {
-		var retErr ClientError
-		eerr = json.Unmarshal(b, &retErr)
-		if err == nil {
-			return &retErr
-		} else {
-			return &ClientError{ErrCode: -2, ErrMsg: eerr.Error()}
-		}
+		return &ClientError{ErrCode: -2, ErrMsg: err.Error()}
 	}
 }
 
@@ -117,12 +111,26 @@ func (c *Client) Request(url string) ([]byte, *ClientError) {
 		}
 	}
 	defer resp.Body.Close()
-	b, eerr := ioutil.ReadAll(resp.Body)
-	if eerr != nil {
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
 		return nil, &ClientError{
 			ErrCode: -2,
-			ErrMsg:  eerr.Error(),
+			ErrMsg:  err.Error(),
 		}
 	}
-	return b, nil
+	var res map[string]interface{}
+	err = json.Unmarshal(b, &res)
+	if err != nil {
+		return nil, &ClientError{
+			ErrCode: -2,
+			ErrMsg:  err.Error(),
+		}
+	}
+	if _, ok := res["errcode"]; ok {
+		var eerr ClientError
+		json.Unmarshal(b, &eerr)
+		return nil, &eerr
+	} else {
+		return b, nil
+	}
 }

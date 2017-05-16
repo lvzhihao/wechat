@@ -32,12 +32,16 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
+	mgo "gopkg.in/mgo.v2"
+
 	"go.uber.org/zap"
 
+	"github.com/coocood/freecache"
 	"github.com/hashicorp/consul/api"
 	"github.com/lvzhihao/wechat/core"
 	"github.com/lvzhihao/wechat/utils"
@@ -53,10 +57,22 @@ var serverCmd = &cobra.Command{
 
 wechat server --app_id=xxxx --app_secret=xxxx`,
 	Run: func(cmd *cobra.Command, args []string) {
-		//logger
-		//logger, _ := zap.NewProduction()
-		logger, _ := zap.NewDevelopment()
+		//cache
+		cacheSize := 100 * 1024 * 1024
+		cache := freecache.NewCache(cacheSize)
+		debug.SetGCPercent(20)
+		var logger *zap.Logger
+		if viper.GetBool("debug") {
+			logger, _ = zap.NewDevelopment()
+		} else {
+			logger, _ = zap.NewProduction()
+		}
 		defer logger.Sync() // flushes buffer, if any
+		//mongo
+		session, err := mgo.Dial(viper.GetString("mongo"))
+		if err != nil {
+			logger.Panic("mongo config error", zap.Error(err))
+		}
 		//wechat ulClientlient
 		client, eerr := core.New(&core.ClientConfig{
 			AppId:          viper.GetString("appid"),
@@ -68,8 +84,8 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger.Panic("wechat config error", zap.Any("error", eerr))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
-		proxy(client, logger)
-		oauth(client, logger)
+		proxy(logger, client)
+		oauth(logger, client, session, cache)
 		receive(logger)
 		health(logger)
 		service_id := "wproxy-" + viper.GetString("addr")
@@ -158,38 +174,70 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func oauth(c *core.Client, l *zap.Logger) {
+func oauth(l *zap.Logger, c *core.Client, s *mgo.Session, cache *freecache.Cache) {
 	//todo
 	//key secret 验证，此处key secret为proxy服务所设置
 	http.HandleFunc("/connect/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
+		scope := r.URL.Query().Get("scope")
+		if scope == "" {
+			scope = "snsapi_base"
+		}
 		p := fmt.Sprintf(
-			"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=snsapi_userinfo&state=%s#wechat_redirect",
+			"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect",
 			viper.GetString("appid"),
 			url.QueryEscape(fmt.Sprintf("https://lv.dev.yaoh.cc/connect/oauth2/callback")),
+			scope,
 			url.QueryEscape(r.URL.Query().Get("redirect_uri")),
 		)
 		l.Info("oauth authorize", zap.String("url", p))
 		http.Redirect(w, r, p, 302)
+		return
 	})
 	http.HandleFunc("/connect/oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
+		//todo 设置安全回调域
 		l.Sugar().Infof("Request: %v", r)
-		userToken, eerr := c.GetUserAccessToken(r.URL.Query().Get("code"))
+		code := r.URL.Query().Get("code")
+		userToken, eerr := c.GetUserAccessToken(code)
 		if eerr != nil {
 			l.Error("Fetch token error", zap.Any("error", eerr))
 			http.Redirect(w, r, r.URL.Query().Get("state"), 302)
 			return
 		}
 		l.Debug("token response", zap.Any("token", userToken))
-		userInfo, eerr := c.GetUserInfoByToken(userToken)
-		l.Debug("userinfo", zap.Any("user", userInfo))
-		w.Write([]byte("ok"))
+		if strings.Index(userToken.Scope, "snsapi_userinfo") > 0 {
+			userInfo, eerr := c.GetUserInfoByToken(userToken)
+			if eerr != nil {
+				l.Error("Fetch userinfo error", zap.Any("error", eerr))
+				http.Redirect(w, r, r.URL.Query().Get("state"), 302)
+				return
+			}
+			l.Debug("userinfo", zap.Any("user", userInfo))
+		}
+		cache.Set([]byte(code), []byte(userToken.OpenId), 300)
+		http.Redirect(w, r, r.URL.Query().Get("state")+"?code="+code, 302)
+		return
 	})
-
 	http.HandleFunc("/connect/oauth2/access_token", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
-	http.HandleFunc("/connect/oauth2/refresh_token", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
+		l.Sugar().Infof("Request: %v", r)
+		code := r.URL.Query().Get("code")
+		openid, err := cache.Get([]byte(code))
+		if err != nil {
+			ret := core.ClientError{
+				ErrCode: -2,
+				ErrMsg:  err.Error(),
+			}
+			b, _ := json.Marshal(ret)
+			w.Write(b)
+		} else {
+			l.Debug("code fetch success", zap.String("code", code), zap.String("openid", string(openid)))
+			cache.Del([]byte(code))
+			ret := map[string]string{
+				"openid": string(openid),
+			}
+			b, _ := json.Marshal(ret)
+			w.Write(b)
+			return
+		}
 	})
 }
 
@@ -247,7 +295,7 @@ func receive(l *zap.Logger) {
 	})
 }
 
-func proxy(c *core.Client, l *zap.Logger) {
+func proxy(l *zap.Logger, c *core.Client) {
 	sugar := l.Sugar()
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		requestId := utils.RandStringRunes(40)
@@ -329,6 +377,8 @@ func init() {
 	serverCmd.Flags().String("consul", "", "consul api")
 	serverCmd.Flags().String("consul_token", "", "consul acl token")
 	serverCmd.Flags().String("token", "", "msg receive token")
+	serverCmd.Flags().Bool("debug", false, "display debug log")
+	serverCmd.Flags().String("mongo", "", "mongo dial")
 	viper.BindPFlag("appid", serverCmd.Flags().Lookup("appid"))
 	viper.BindPFlag("secret", serverCmd.Flags().Lookup("secret"))
 	viper.BindPFlag("addr", serverCmd.Flags().Lookup("addr"))
@@ -337,4 +387,6 @@ func init() {
 	viper.BindPFlag("consul", serverCmd.Flags().Lookup("consul"))
 	viper.BindPFlag("consul_token", serverCmd.Flags().Lookup("consul_token"))
 	viper.BindPFlag("token", serverCmd.Flags().Lookup("token"))
+	viper.BindPFlag("debug", serverCmd.Flags().Lookup("debug"))
+	viper.BindPFlag("mongo", serverCmd.Flags().Lookup("mongo"))
 }
