@@ -3,26 +3,29 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 type UserAccessToken struct {
-	AccessToken  string `json:"access_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-	OpenId       string `json:"openid"`
-	Scope        string `json:"scope"`
+	AccessToken  string    `bson:"access_token" json:"access_token"`
+	ExpiresIn    int64     `bson:"expires_in" json:"expires_in"`
+	RefreshToken string    `bson:"refresh_token" json:"refresh_token"`
+	OpenId       string    `bson:"openid" json:"openid"`
+	Scope        string    `bson:"scope" json:"scope"`
+	UpdateTime   time.Time `bson:"update_time" json:"-"`
 }
 
 type UserInfo struct {
-	OpenId     string   `json:"openid"`
-	NickName   string   `json:"nickname"`
-	Sex        int64    `json:"sex"`
-	Province   string   `json:"province"`
-	City       string   `json:"city"`
-	Country    string   `json:"country"`
-	HeadImgUrl string   `json:"headimgurl"`
-	Privilege  []string `json:"privielge"`
-	UnionId    string   `json:"unionid"`
+	OpenId     string    `bson:"openid" json:"openid"`
+	NickName   string    `bson:"nickname" json:"nickname"`
+	Sex        int64     `bson:"sex" json:"sex"`
+	Province   string    `bson:"province" json:"province"`
+	City       string    `bson:"city" json:"city"`
+	Country    string    `bson:"country" json:"country"`
+	HeadImgUrl string    `bson:"headimgurl" json:"headimgurl"`
+	Privilege  []string  `bson:"privilege" json:"privilege"`
+	UnionId    string    `bson:"unionid" json:"unionid"`
+	UpdateTime time.Time `bson:"update_time" json:"-"`
 }
 
 func (c *Client) GetUserAccessToken(code string) (*UserAccessToken, *ClientError) {

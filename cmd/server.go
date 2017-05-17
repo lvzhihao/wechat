@@ -38,6 +38,7 @@ import (
 	"time"
 
 	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 
 	"go.uber.org/zap"
 
@@ -73,6 +74,25 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		if err != nil {
 			logger.Panic("mongo config error", zap.Error(err))
 		}
+		defer session.Close()
+		collection := session.DB("").C("user_token")
+		index := mgo.Index{
+			Key:        []string{"openid"},
+			Unique:     true,
+			DropDups:   true,
+			Background: true, // See notes.
+			Sparse:     true,
+		}
+		collection.EnsureIndex(index)
+		collection = session.DB("").C("user_info")
+		index = mgo.Index{
+			Key:        []string{"openid"},
+			Unique:     true,
+			DropDups:   true,
+			Background: true, // See notes.
+			Sparse:     true,
+		}
+		collection.EnsureIndex(index)
 		//wechat ulClientlient
 		client, eerr := core.New(&core.ClientConfig{
 			AppId:          viper.GetString("appid"),
@@ -204,7 +224,13 @@ func oauth(l *zap.Logger, c *core.Client, s *mgo.Session, cache *freecache.Cache
 			return
 		}
 		l.Debug("token response", zap.Any("token", userToken))
-		if strings.Index(userToken.Scope, "snsapi_userinfo") > 0 {
+		userToken.UpdateTime = time.Now()
+		collection := s.DB("").C("user_token")
+		_, err := collection.Upsert(bson.M{"openid": userToken.OpenId}, userToken)
+		if err != nil {
+			l.Error("token update mongo err", zap.Error(err))
+		}
+		if strings.Index(userToken.Scope, "snsapi_userinfo") >= 0 {
 			userInfo, eerr := c.GetUserInfoByToken(userToken)
 			if eerr != nil {
 				l.Error("Fetch userinfo error", zap.Any("error", eerr))
@@ -212,6 +238,12 @@ func oauth(l *zap.Logger, c *core.Client, s *mgo.Session, cache *freecache.Cache
 				return
 			}
 			l.Debug("userinfo", zap.Any("user", userInfo))
+			userInfo.UpdateTime = time.Now()
+			collection := s.DB("").C("user_info")
+			_, err := collection.Upsert(bson.M{"openid": userInfo.OpenId}, userInfo)
+			if err != nil {
+				l.Error("info update mongo err", zap.Error(err))
+			}
 		}
 		cache.Set([]byte(code), []byte(userToken.OpenId), 300)
 		http.Redirect(w, r, r.URL.Query().Get("state")+"?code="+code, 302)
@@ -231,10 +263,19 @@ func oauth(l *zap.Logger, c *core.Client, s *mgo.Session, cache *freecache.Cache
 		} else {
 			l.Debug("code fetch success", zap.String("code", code), zap.String("openid", string(openid)))
 			cache.Del([]byte(code))
-			ret := map[string]string{
-				"openid": string(openid),
+			collection := s.DB("").C("user_info")
+			var userInfo core.UserInfo
+			var b []byte
+			err := collection.Find(bson.M{"openid": string(openid)}).One(&userInfo)
+			if err != nil {
+				l.Error("info find mongo err", zap.Error(err))
+				ret := map[string]string{
+					"openid": string(openid),
+				}
+				b, _ = json.Marshal(ret)
+			} else {
+				b, _ = json.Marshal(userInfo)
 			}
-			b, _ := json.Marshal(ret)
 			w.Write(b)
 			return
 		}
@@ -378,7 +419,7 @@ func init() {
 	serverCmd.Flags().String("consul_token", "", "consul acl token")
 	serverCmd.Flags().String("token", "", "msg receive token")
 	serverCmd.Flags().Bool("debug", false, "display debug log")
-	serverCmd.Flags().String("mongo", "", "mongo dial")
+	serverCmd.Flags().String("mongo", "mongodb://127.0.0.1/wechat", "mongodb://][user:pass@]host1[:port1][,host2[:port2],...][/database][?options]")
 	viper.BindPFlag("appid", serverCmd.Flags().Lookup("appid"))
 	viper.BindPFlag("secret", serverCmd.Flags().Lookup("secret"))
 	viper.BindPFlag("addr", serverCmd.Flags().Lookup("addr"))
