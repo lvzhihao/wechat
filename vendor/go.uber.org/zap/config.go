@@ -86,6 +86,7 @@ func NewProductionEncoderConfig() zapcore.EncoderConfig {
 		CallerKey:      "caller",
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.LowercaseLevelEncoder,
 		EncodeTime:     zapcore.EpochTimeEncoder,
 		EncodeDuration: zapcore.SecondsDurationEncoder,
@@ -100,7 +101,7 @@ func NewProductionEncoderConfig() zapcore.EncoderConfig {
 // Stacktraces are automatically included on logs of ErrorLevel and above.
 func NewProductionConfig() Config {
 	return Config{
-		Level:       NewAtomicLevel(),
+		Level:       NewAtomicLevelAt(InfoLevel),
 		Development: false,
 		Sampling: &SamplingConfig{
 			Initial:    100,
@@ -124,6 +125,7 @@ func NewDevelopmentEncoderConfig() zapcore.EncoderConfig {
 		CallerKey:      "C",
 		MessageKey:     "M",
 		StacktraceKey:  "S",
+		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.CapitalLevelEncoder,
 		EncodeTime:     zapcore.ISO8601TimeEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
@@ -138,11 +140,8 @@ func NewDevelopmentEncoderConfig() zapcore.EncoderConfig {
 // console encoder, writes to standard error, and disables sampling.
 // Stacktraces are automatically included on logs of WarnLevel and above.
 func NewDevelopmentConfig() Config {
-	dyn := NewAtomicLevel()
-	dyn.SetLevel(DebugLevel)
-
 	return Config{
-		Level:            dyn,
+		Level:            NewAtomicLevelAt(DebugLevel),
 		Development:      true,
 		Encoding:         "console",
 		EncoderConfig:    NewDevelopmentEncoderConfig(),
@@ -217,13 +216,11 @@ func (cfg Config) buildOptions(errSink zapcore.WriteSyncer) []Option {
 func (cfg Config) openSinks() (zapcore.WriteSyncer, zapcore.WriteSyncer, error) {
 	sink, closeOut, err := Open(cfg.OutputPaths...)
 	if err != nil {
-		closeOut()
 		return nil, nil, err
 	}
-	errSink, closeErr, err := Open(cfg.ErrorOutputPaths...)
+	errSink, _, err := Open(cfg.ErrorOutputPaths...)
 	if err != nil {
 		closeOut()
-		closeErr()
 		return nil, nil, err
 	}
 	return sink, errSink, nil

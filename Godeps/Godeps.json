@@ -164,38 +164,38 @@
 		},
 		{
 			"ImportPath": "go.uber.org/zap",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/buffer",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/internal/bufferpool",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/internal/color",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/internal/exit",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/internal/multierror",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "go.uber.org/zap/zapcore",
-			"Comment": "v1.0.0-6-g63c0a89",
-			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+			"Comment": "v1.4.0",
+			"Rev": "fab453050a7a08c35f31fc5fff6f2dbd962285ab"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/acme",
