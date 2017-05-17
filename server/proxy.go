@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func proxy(w http.ResponseWriter, r *http.Request) {
+func Proxy(w http.ResponseWriter, r *http.Request) {
 	sugar := Logger.Sugar()
 	requestId := utils.RandStringRunes(40)
 	w.Header().Set("X-REQUEST-ID", requestId)

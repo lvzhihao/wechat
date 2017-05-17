@@ -1,9 +1,9 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,35 +14,35 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-///connect/oauth2/authorize
-func Oauth2Authorize(c *echo.Context) {
-	scope := c.Param("scope")
-	redirect := c.Param("redirect_uri")
+func Oauth2Authorize(c echo.Context) error {
+	scope := c.QueryParam("scope")
+	redirect := c.QueryParam("redirect_uri")
 	if scope == "" {
 		scope = "snsapi_base"
+	}
+	scheme := c.Request().Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		scheme = "http"
 	}
 	url := fmt.Sprintf(
 		"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect",
 		viper.GetString("appid"),
-		urLogger.QueryEscape(c.Echo().URL("connect/oauth2/callback")),
+		url.QueryEscape(scheme+"://"+c.Request().Host+"/"+c.Echo().URL(Oauth2Callback)),
 		scope,
-		urLogger.QueryEscape(redirect),
+		url.QueryEscape(redirect),
 	)
 	Logger.Info("oauth authorize", zap.String("url", url))
-	c.Redirect(302, url)
+	return c.Redirect(http.StatusFound, url)
 }
 
-////connect/oauth2/callback
-func Oauth2Callback(c *echo.Context) {
+func Oauth2Callback(c echo.Context) error {
 	//todo 设置安全回调域
-	Logger.Sugar().Infof("Request: %v", r)
-	code := c.Param("code")
-	state := c.Param("state")
+	code := c.QueryParam("code")
+	state := c.QueryParam("state")
 	userToken, eerr := Client.GetUserAccessToken(code)
 	if eerr != nil {
 		Logger.Error("Fetch token error", zap.Any("error", eerr))
-		c.Redirect(302, state)
-		return
+		return c.Redirect(http.StatusFound, state)
 	}
 	Logger.Debug("token response", zap.Any("token", userToken))
 	userToken.UpdateTime = time.Now()
@@ -55,8 +55,7 @@ func Oauth2Callback(c *echo.Context) {
 		userInfo, eerr := Client.GetUserInfoByToken(userToken)
 		if eerr != nil {
 			Logger.Error("Fetch userinfo error", zap.Any("error", eerr))
-			c.Redirect(302, state)
-			return
+			return c.Redirect(http.StatusFound, state)
 		}
 		Logger.Debug("userinfo", zap.Any("user", userInfo))
 		userInfo.UpdateTime = time.Now()
@@ -67,39 +66,32 @@ func Oauth2Callback(c *echo.Context) {
 		}
 	}
 	Cache.Set([]byte(code), []byte(userToken.OpenId), 300)
-	c.Redirect(302, state+"?code="+code, 302)
-	return
+	return c.Redirect(http.StatusFound, state+"?code="+code)
 }
 
-////connect/oauth2/access_token
-func AccessToken(w http.ResponseWriter, r *http.Request) {
-	Logger.Sugar().Infof("Request: %v", r)
-	code := r.URL.Query().Get("code")
+func Oauth2AccessToken(c echo.Context) error {
+	code := c.QueryParam("code")
 	openid, err := Cache.Get([]byte(code))
 	if err != nil {
 		ret := core.ClientError{
 			ErrCode: -2,
 			ErrMsg:  err.Error(),
 		}
-		b, _ := json.Marshal(ret)
-		w.Write(b)
+		return c.JSON(http.StatusOK, ret)
 	} else {
 		Logger.Debug("code fetch success", zap.String("code", code), zap.String("openid", string(openid)))
-		cache.Del([]byte(code))
-		collection := s.DB("").C("user_info")
+		Cache.Del([]byte(code))
+		collection := Session.DB("").C("user_info")
 		var userInfo core.UserInfo
-		var b []byte
 		err := collection.Find(bson.M{"openid": string(openid)}).One(&userInfo)
 		if err != nil {
 			Logger.Error("info find mongo err", zap.Error(err))
 			ret := map[string]string{
 				"openid": string(openid),
 			}
-			b, _ = json.Marshal(ret)
+			return c.JSON(http.StatusOK, ret)
 		} else {
-			b, _ = json.Marshal(userInfo)
+			return c.JSON(http.StatusOK, userInfo)
 		}
-		w.Write(b)
-		return
 	}
 }

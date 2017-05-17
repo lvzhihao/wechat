@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/coocood/freecache"
 	"github.com/labstack/echo"
@@ -30,6 +31,6 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func health(c echo.Context) {
-	return c.String("ok")
+func Health(c echo.Context) error {
+	return c.HTML(http.StatusOK, "ok")
 }

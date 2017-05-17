@@ -21,10 +21,10 @@
 package cmd
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +35,10 @@ import (
 
 	"github.com/coocood/freecache"
 	"github.com/hashicorp/consul/api"
+	"github.com/labstack/echo"
+	"github.com/labstack/echo/middleware"
 	"github.com/lvzhihao/wechat/core"
+	"github.com/lvzhihao/wechat/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -51,7 +54,9 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		// cache
 		cacheSize := 100 * 1024 * 1024
 		cache := freecache.NewCache(cacheSize)
-		debug.SetGCPercent(20)
+		//debug.SetGCPercent(20)
+
+		// logger
 		var logger *zap.Logger
 		if viper.GetBool("debug") {
 			logger, _ = zap.NewDevelopment()
@@ -59,12 +64,15 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger, _ = zap.NewProduction()
 		}
 		defer logger.Sync() // flushes buffer, if any
+
 		//mongo
 		session, err := mgo.Dial(viper.GetString("mongo"))
 		if err != nil {
 			logger.Panic("mongo config error", zap.Error(err))
 		}
 		defer session.Close()
+
+		// ensure mongo index
 		collection := session.DB("").C("user_token")
 		index := mgo.Index{
 			Key:        []string{"openid"},
@@ -83,7 +91,8 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			Sparse:     true,
 		}
 		collection.EnsureIndex(index)
-		//wechat ulClientlient
+
+		// wechat Client
 		client, eerr := core.New(&core.ClientConfig{
 			AppId:          viper.GetString("appid"),
 			AppSecret:      viper.GetString("secret"),
@@ -94,10 +103,8 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			logger.Panic("wechat config error", zap.Any("error", eerr))
 		}
 		logger.Info("Wechat Connecting...", zap.String("token", client.FetchToken()))
-		proxy(logger, client)
-		oauth(logger, client, session, cache)
-		receive(logger)
-		health(logger)
+
+		// consul register
 		service_id := "wproxy-" + viper.GetString("addr")
 		var consulClient *api.Client
 		if viper.GetString("consul") != "" {
@@ -136,39 +143,54 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			}
 		}
 		logger.Info("Proxy Running...", zap.String("addr", viper.GetString("addr")))
-
-		go func() {
-			quit := make(chan os.Signal, 1)
-			signal.Notify(quit, os.Interrupt, os.Kill)
-			for {
-				<-quit
-				if viper.GetString("consul") != "" {
-					err := consulClient.Agent().ServiceDeregister(service_id)
-					if err != nil {
-						logger.Fatal("consul deregister error", zap.Error(err))
-					} else {
-						logger.Info("Deregister service in consul", zap.String("servcie_id", service_id))
-					}
+		defer func() {
+			if viper.GetString("consul") != "" {
+				err := consulClient.Agent().ServiceDeregister(service_id)
+				if err != nil {
+					logger.Fatal("consul deregister error", zap.Error(err))
+				} else {
+					logger.Info("Deregister service in consul", zap.String("servcie_id", service_id))
 				}
-				/*
-					ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-					server.Shutdown(ctx)
-				*/
-				os.Exit(1)
 			}
 		}()
-		if viper.GetString("cert") != "" {
-			logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServeTLS(
-				viper.GetString("addr"),
-				viper.GetString("cert"),
-				viper.GetString("key"),
-				nil,
-			)))
-		} else {
-			logger.Fatal("Proxy Stop...", zap.Any("info", http.ListenAndServe(
-				viper.GetString("addr"),
-				nil,
-			)))
+
+		// server config
+		server.Cache = cache
+		server.Session = session
+		server.Logger = logger
+		server.Client = client
+
+		// echo server
+		e := echo.New()
+		e.Use(middleware.Logger())
+		e.Use(middleware.Recover())
+
+		e.Any("/*", echo.WrapHandler(http.HandlerFunc(server.Proxy)))
+		e.Any("/receive", echo.WrapHandler(http.HandlerFunc(server.Receive)))
+		e.Any("/health", server.Health)
+		e.GET("connect/oauth2/authorize", server.Oauth2Authorize)
+		e.GET("connect/oauth2/callback", server.Oauth2Callback)
+		e.GET("connect/oauth2/access_token", server.Oauth2AccessToken)
+
+		go func() {
+			if viper.GetString("cert") != "" {
+				e.Logger.Fatal(e.StartTLS(
+					viper.GetString("addr"),
+					viper.GetString("cert"),
+					viper.GetString("key"),
+				))
+			} else {
+				e.Logger.Fatal(e.Start(viper.GetString("addr")))
+			}
+		}()
+
+		quit := make(chan os.Signal)
+		signal.Notify(quit, os.Interrupt, os.Kill)
+		<-quit
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := e.Shutdown(ctx); err != nil {
+			e.Logger.Fatal(err)
 		}
 	},
 }

@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func receive(w http.ResponseWriter, r *http.Request) {
+func Receive(w http.ResponseWriter, r *http.Request) {
 	if core.ReceiveMsgCheckSign(viper.GetString("token"), r) {
 		q := r.URL.Query()
 		if q.Get("echostr") != "" {
@@ -18,17 +18,17 @@ func receive(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data, err := ioutil.ReadAll(r.Body)
 			if err != nil {
-				l.Error("request body empty", zap.Error(err))
+				Logger.Error("request body empty", zap.Error(err))
 				http.NotFound(w, r)
 			} else {
-				l.Debug("request body ", zap.String("body", string(data)))
+				Logger.Debug("request body ", zap.String("body", string(data)))
 				var msg core.Msg
 				err := xml.Unmarshal(data, &msg)
 				if err != nil {
-					l.Error("request body except", zap.Error(err))
+					Logger.Error("request body except", zap.Error(err))
 					http.NotFound(w, r)
 				} else {
-					l.Debug("xml content", zap.Any("xml", msg))
+					Logger.Debug("xml content", zap.Any("xml", msg))
 					w.Write(nil)
 					//todo
 					/*

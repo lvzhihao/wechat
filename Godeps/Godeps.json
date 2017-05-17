@@ -13,6 +13,11 @@
 			"Rev": "a27035d5537f1fa5518225e9373c9ec7450f2ea2"
 		},
 		{
+			"ImportPath": "github.com/dgrijalva/jwt-go",
+			"Comment": "v3.0.0-17-g2268707",
+			"Rev": "2268707a8f0843315e2004ee4f1d021dc08baedf"
+		},
+		{
 			"ImportPath": "github.com/fsnotify/fsnotify",
 			"Comment": "v1.4.2-6-g4da3e2c",
 			"Rev": "4da3e2cfbabc9f751898f250b49f2439785783a1"
@@ -72,9 +77,49 @@
 			"Rev": "76626ae9c91c4f2a10f34cad8ce83ea42c93bb75"
 		},
 		{
+			"ImportPath": "github.com/labstack/echo",
+			"Comment": "v3.1.0-13-g3359eae",
+			"Rev": "3359eae3067d1f6dba4785ea0377796405a34429"
+		},
+		{
+			"ImportPath": "github.com/labstack/echo/middleware",
+			"Comment": "v3.1.0-13-g3359eae",
+			"Rev": "3359eae3067d1f6dba4785ea0377796405a34429"
+		},
+		{
+			"ImportPath": "github.com/labstack/gommon/bytes",
+			"Comment": "v0.2.1",
+			"Rev": "1121fd3e243c202482226a7afe4dcd07ffc4139a"
+		},
+		{
+			"ImportPath": "github.com/labstack/gommon/color",
+			"Comment": "v0.2.1",
+			"Rev": "1121fd3e243c202482226a7afe4dcd07ffc4139a"
+		},
+		{
+			"ImportPath": "github.com/labstack/gommon/log",
+			"Comment": "v0.2.1",
+			"Rev": "1121fd3e243c202482226a7afe4dcd07ffc4139a"
+		},
+		{
+			"ImportPath": "github.com/labstack/gommon/random",
+			"Comment": "v0.2.1",
+			"Rev": "1121fd3e243c202482226a7afe4dcd07ffc4139a"
+		},
+		{
 			"ImportPath": "github.com/magiconair/properties",
 			"Comment": "v1.7.0",
 			"Rev": "c265cfa48dda6474e208715ca93e987829f572f8"
+		},
+		{
+			"ImportPath": "github.com/mattn/go-colorable",
+			"Comment": "v0.0.7-24-gded68f7",
+			"Rev": "ded68f7a9561c023e790de24279db7ebf473ea80"
+		},
+		{
+			"ImportPath": "github.com/mattn/go-isatty",
+			"Comment": "v0.0.2",
+			"Rev": "fc9e8d8ef48496124e79ae0df75490096eccf6fe"
 		},
 		{
 			"ImportPath": "github.com/mitchellh/mapstructure",
@@ -103,6 +148,14 @@
 		{
 			"ImportPath": "github.com/spf13/viper",
 			"Rev": "d8a428b8a30606e1d0b355d91edf282609ade1a6"
+		},
+		{
+			"ImportPath": "github.com/valyala/bytebufferpool",
+			"Rev": "e746df99fe4a3986f4d4f79e13c1e0117ce9c2f7"
+		},
+		{
+			"ImportPath": "github.com/valyala/fasttemplate",
+			"Rev": "dcecefd839c4193db0d35b88ec65b4c12d360ab0"
 		},
 		{
 			"ImportPath": "go.uber.org/atomic",
@@ -143,6 +196,14 @@
 			"ImportPath": "go.uber.org/zap/zapcore",
 			"Comment": "v1.0.0-6-g63c0a89",
 			"Rev": "63c0a8997f7de22e1af35ec211fdc4e9837767d2"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/acme",
+			"Rev": "0fe963104e9d1877082f8fb38f816fcd97eb1d10"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/acme/autocert",
+			"Rev": "0fe963104e9d1877082f8fb38f816fcd97eb1d10"
 		},
 		{
 			"ImportPath": "golang.org/x/sys/unix",
