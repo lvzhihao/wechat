@@ -159,8 +159,8 @@
 		},
 		{
 			"ImportPath": "go.uber.org/atomic",
-			"Comment": "v1.1.0",
-			"Rev": "3b8db5e93c4c02efbc313e17b2e796b0914a01fb"
+			"Comment": "v1.2.0-3-ga85b15e",
+			"Rev": "a85b15eff9f2092b1cf20d4fb804899dd0d5e422"
 		},
 		{
 			"ImportPath": "go.uber.org/zap",
