@@ -21,15 +21,7 @@
 package cmd
 
 import (
-	"crypto/tls"
-	"encoding/json"
-	"encoding/xml"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -38,14 +30,12 @@ import (
 	"time"
 
 	mgo "gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 
 	"go.uber.org/zap"
 
 	"github.com/coocood/freecache"
 	"github.com/hashicorp/consul/api"
 	"github.com/lvzhihao/wechat/core"
-	"github.com/lvzhihao/wechat/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -58,7 +48,7 @@ var serverCmd = &cobra.Command{
 
 wechat server --app_id=xxxx --app_secret=xxxx`,
 	Run: func(cmd *cobra.Command, args []string) {
-		//cache
+		// cache
 		cacheSize := 100 * 1024 * 1024
 		cache := freecache.NewCache(cacheSize)
 		debug.SetGCPercent(20)
@@ -181,221 +171,6 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 			)))
 		}
 	},
-}
-
-func errResult(code int, msg string) string {
-	b, _ := json.Marshal(struct {
-		errcode int    `json:"errcode"`
-		errmsg  string `json:"errmsg"`
-	}{
-		code,
-		msg,
-	})
-	return string(b)
-}
-
-func oauth(l *zap.Logger, c *core.Client, s *mgo.Session, cache *freecache.Cache) {
-	//todo
-	//key secret 验证，此处key secret为proxy服务所设置
-	http.HandleFunc("/connect/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
-		scope := r.URL.Query().Get("scope")
-		if scope == "" {
-			scope = "snsapi_base"
-		}
-		p := fmt.Sprintf(
-			"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect",
-			viper.GetString("appid"),
-			url.QueryEscape(fmt.Sprintf("https://lv.dev.yaoh.cc/connect/oauth2/callback")),
-			scope,
-			url.QueryEscape(r.URL.Query().Get("redirect_uri")),
-		)
-		l.Info("oauth authorize", zap.String("url", p))
-		http.Redirect(w, r, p, 302)
-		return
-	})
-	http.HandleFunc("/connect/oauth2/callback", func(w http.ResponseWriter, r *http.Request) {
-		//todo 设置安全回调域
-		l.Sugar().Infof("Request: %v", r)
-		code := r.URL.Query().Get("code")
-		userToken, eerr := c.GetUserAccessToken(code)
-		if eerr != nil {
-			l.Error("Fetch token error", zap.Any("error", eerr))
-			http.Redirect(w, r, r.URL.Query().Get("state"), 302)
-			return
-		}
-		l.Debug("token response", zap.Any("token", userToken))
-		userToken.UpdateTime = time.Now()
-		collection := s.DB("").C("user_token")
-		_, err := collection.Upsert(bson.M{"openid": userToken.OpenId}, userToken)
-		if err != nil {
-			l.Error("token update mongo err", zap.Error(err))
-		}
-		if strings.Index(userToken.Scope, "snsapi_userinfo") >= 0 {
-			userInfo, eerr := c.GetUserInfoByToken(userToken)
-			if eerr != nil {
-				l.Error("Fetch userinfo error", zap.Any("error", eerr))
-				http.Redirect(w, r, r.URL.Query().Get("state"), 302)
-				return
-			}
-			l.Debug("userinfo", zap.Any("user", userInfo))
-			userInfo.UpdateTime = time.Now()
-			collection := s.DB("").C("user_info")
-			_, err := collection.Upsert(bson.M{"openid": userInfo.OpenId}, userInfo)
-			if err != nil {
-				l.Error("info update mongo err", zap.Error(err))
-			}
-		}
-		cache.Set([]byte(code), []byte(userToken.OpenId), 300)
-		http.Redirect(w, r, r.URL.Query().Get("state")+"?code="+code, 302)
-		return
-	})
-	http.HandleFunc("/connect/oauth2/access_token", func(w http.ResponseWriter, r *http.Request) {
-		l.Sugar().Infof("Request: %v", r)
-		code := r.URL.Query().Get("code")
-		openid, err := cache.Get([]byte(code))
-		if err != nil {
-			ret := core.ClientError{
-				ErrCode: -2,
-				ErrMsg:  err.Error(),
-			}
-			b, _ := json.Marshal(ret)
-			w.Write(b)
-		} else {
-			l.Debug("code fetch success", zap.String("code", code), zap.String("openid", string(openid)))
-			cache.Del([]byte(code))
-			collection := s.DB("").C("user_info")
-			var userInfo core.UserInfo
-			var b []byte
-			err := collection.Find(bson.M{"openid": string(openid)}).One(&userInfo)
-			if err != nil {
-				l.Error("info find mongo err", zap.Error(err))
-				ret := map[string]string{
-					"openid": string(openid),
-				}
-				b, _ = json.Marshal(ret)
-			} else {
-				b, _ = json.Marshal(userInfo)
-			}
-			w.Write(b)
-			return
-		}
-	})
-}
-
-func health(l *zap.Logger) {
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
-}
-
-func receive(l *zap.Logger) {
-	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
-		if core.ReceiveMsgCheckSign(viper.GetString("token"), r) {
-			q := r.URL.Query()
-			if q.Get("echostr") != "" {
-				w.Write([]byte(q.Get("echostr")))
-			} else {
-				data, err := ioutil.ReadAll(r.Body)
-				if err != nil {
-					l.Error("request body empty", zap.Error(err))
-					http.NotFound(w, r)
-				} else {
-					l.Debug("request body ", zap.String("body", string(data)))
-					var msg core.Msg
-					err := xml.Unmarshal(data, &msg)
-					if err != nil {
-						l.Error("request body except", zap.Error(err))
-						http.NotFound(w, r)
-					} else {
-						l.Debug("xml content", zap.Any("xml", msg))
-						w.Write(nil)
-						//todo
-						/*
-								ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
-									ToUserName:   msg.FromUserName,
-									FromUserName: msg.ToUserName,
-									CreateTime:   int(time.Now().Unix()),
-									MsgType:      "text",
-								}, Content: "replay test"}
-								b, err := xml.Marshal(ret)
-							if err != nil {
-								l.Error("msg reply error", zap.Error(err))
-								//retry todo
-								w.Write([]byte("success"))
-							} else {
-								l.Debug("msg reply", zap.String("xml", string(b)))
-								w.Write(b)
-							}
-						*/
-					}
-				}
-			}
-		} else {
-			http.NotFound(w, r)
-		}
-	})
-}
-
-func proxy(l *zap.Logger, c *core.Client) {
-	sugar := l.Sugar()
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		requestId := utils.RandStringRunes(40)
-		w.Header().Set("X-REQUEST-ID", requestId)
-
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, errResult(-2, "not a hijacker"), http.StatusInternalServerError)
-			return
-		}
-
-		in, _, err := hj.Hijack()
-		if err != nil {
-			l.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-			return
-		}
-		defer in.Close()
-
-		r.URL.Scheme = "https"
-		r.URL.Host = "api.weixin.qq.com:443"
-		v := r.URL.Query()
-		v.Set("access_token", c.FetchToken())
-		r.URL.RawQuery = v.Encode()
-
-		conn, err := net.Dial("tcp", r.URL.Host)
-		if err != nil {
-			l.Error("Proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-			http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-			return
-		}
-		defer conn.Close()
-		out := tls.Client(conn, &tls.Config{
-			InsecureSkipVerify: false,
-			ServerName:         "api.weixin.qq.com", //must config, see tls.config
-		})
-		defer out.Close()
-		err = r.Write(out)
-		if err != nil {
-			l.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-			http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
-			return
-		}
-
-		errc := make(chan error, 2)
-		cp := func(dst io.Writer, src io.Reader) {
-			_, err := io.Copy(dst, src)
-			errc <- err
-		}
-
-		sugar.Infof("Request: %v", r)
-
-		go cp(out, in)
-		go cp(in, out)
-		err = <-errc
-		if err != nil && err != io.EOF {
-			l.Error("proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-		}
-	})
 }
 
 func init() {
