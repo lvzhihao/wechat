@@ -6,12 +6,11 @@ import (
 	"net/http"
 
 	"github.com/lvzhihao/wechat/core"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 func Receive(w http.ResponseWriter, r *http.Request) {
-	if core.ReceiveMsgCheckSign(viper.GetString("token"), r) {
+	if core.ReceiveMsgCheckSign(ReceiveToken, r) {
 		q := r.URL.Query()
 		if q.Get("echostr") != "" {
 			w.Write([]byte(q.Get("echostr")))

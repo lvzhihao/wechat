@@ -17,6 +17,7 @@ var (
 	Cache   *freecache.Cache
 	Session *mgo.Session
 
+	AppId        string
 	ReceiveToken string
 )
 

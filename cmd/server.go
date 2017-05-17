@@ -159,6 +159,8 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		server.Session = session
 		server.Logger = logger
 		server.Client = client
+		server.AppId = viper.GetString("appid")
+		server.ReceiveToken = viper.GetString("token")
 
 		// echo server
 		e := echo.New()

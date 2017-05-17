@@ -13,7 +13,6 @@ import (
 func Proxy(w http.ResponseWriter, r *http.Request) {
 	sugar := Logger.Sugar()
 	requestId := utils.RandStringRunes(40)
-	w.Header().Set("X-REQUEST-ID", requestId)
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {

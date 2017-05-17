@@ -9,7 +9,6 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/lvzhihao/wechat/core"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -26,7 +25,7 @@ func Oauth2Authorize(c echo.Context) error {
 	}
 	url := fmt.Sprintf(
 		"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect",
-		viper.GetString("appid"),
+		AppId,
 		url.QueryEscape(scheme+"://"+c.Request().Host+"/"+c.Echo().URL(Oauth2Callback)),
 		scope,
 		url.QueryEscape(redirect),
