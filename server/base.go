@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/coocood/freecache"
 	"github.com/labstack/echo"
 	"github.com/lvzhihao/wechat/core"
 	"go.uber.org/zap"
@@ -13,13 +12,17 @@ import (
 
 var (
 	Logger  *zap.Logger
-	Client  *core.Client
-	Cache   *freecache.Cache
 	Session *mgo.Session
 
-	AppId        string
-	ReceiveToken string
+	Clients       map[string]*core.Client
+	ReceiveTokens map[string]string
+	CallbckUrls   []string
 )
+
+func init() {
+	Clients = make(map[string]*core.Client, 0)
+	ReceiveTokens = make(map[string]string, 0)
+}
 
 func errResult(code int, msg string) string {
 	b, _ := json.Marshal(struct {

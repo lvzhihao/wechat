@@ -5,15 +5,18 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/labstack/echo"
 	"github.com/lvzhihao/wechat/core"
+	"github.com/lvzhihao/wechat/models"
 	"go.uber.org/zap"
-	"gopkg.in/mgo.v2/bson"
 )
 
 func Oauth2Authorize(c echo.Context) error {
+	appid := c.Get("appid").(string)
+	if appid == "" {
+		return c.NoContent(http.StatusNotFound)
+	}
 	scope := c.QueryParam("scope")
 	redirect := c.QueryParam("redirect_uri")
 	if scope == "" {
@@ -25,8 +28,8 @@ func Oauth2Authorize(c echo.Context) error {
 	}
 	url := fmt.Sprintf(
 		"https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s#wechat_redirect",
-		AppId,
-		url.QueryEscape(scheme+"://"+c.Request().Host+"/"+c.Echo().URL(Oauth2Callback)),
+		appid,
+		url.QueryEscape(scheme+"://"+c.Request().Host+c.Echo().URL(Oauth2Callback)),
 		scope,
 		url.QueryEscape(redirect),
 	)
@@ -35,62 +38,60 @@ func Oauth2Authorize(c echo.Context) error {
 }
 
 func Oauth2Callback(c echo.Context) error {
+	//appid := c.Get("appid").(string)
 	//todo 设置安全回调域
 	code := c.QueryParam("code")
 	state := c.QueryParam("state")
-	userToken, eerr := Client.GetUserAccessToken(code)
-	if eerr != nil {
-		Logger.Error("Fetch token error", zap.Any("error", eerr))
-		return c.Redirect(http.StatusFound, state)
-	}
-	Logger.Debug("token response", zap.Any("token", userToken))
-	userToken.UpdateTime = time.Now()
-	collection := Session.DB("").C("user_token")
-	_, err := collection.Upsert(bson.M{"openid": userToken.OpenId}, userToken)
-	if err != nil {
-		Logger.Error("token update mongo err", zap.Error(err))
-	}
-	if strings.Index(userToken.Scope, "snsapi_userinfo") >= 0 {
-		userInfo, eerr := Client.GetUserInfoByToken(userToken)
-		if eerr != nil {
-			Logger.Error("Fetch userinfo error", zap.Any("error", eerr))
-			return c.Redirect(http.StatusFound, state)
-		}
-		Logger.Debug("userinfo", zap.Any("user", userInfo))
-		userInfo.UpdateTime = time.Now()
-		collection := Session.DB("").C("user_info")
-		_, err := collection.Upsert(bson.M{"openid": userInfo.OpenId}, userInfo)
-		if err != nil {
-			Logger.Error("info update mongo err", zap.Error(err))
-		}
-	}
-	Cache.Set([]byte(code), []byte(userToken.OpenId), 300)
 	return c.Redirect(http.StatusFound, state+"?code="+code)
 }
 
 func Oauth2AccessToken(c echo.Context) error {
-	code := c.QueryParam("code")
-	openid, err := Cache.Get([]byte(code))
-	if err != nil {
+	appid := c.Get("appid").(string)
+	client, ok := Clients[appid]
+	if !ok {
 		ret := core.ClientError{
 			ErrCode: -2,
-			ErrMsg:  err.Error(),
+			ErrMsg:  "not found",
 		}
 		return c.JSON(http.StatusOK, ret)
-	} else {
-		Logger.Debug("code fetch success", zap.String("code", code), zap.String("openid", string(openid)))
-		Cache.Del([]byte(code))
-		collection := Session.DB("").C("user_info")
-		var userInfo core.UserInfo
-		err := collection.Find(bson.M{"openid": string(openid)}).One(&userInfo)
-		if err != nil {
-			Logger.Error("info find mongo err", zap.Error(err))
-			ret := map[string]string{
-				"openid": string(openid),
-			}
-			return c.JSON(http.StatusOK, ret)
-		} else {
-			return c.JSON(http.StatusOK, userInfo)
+	}
+	code := c.QueryParam("code")
+
+	userToken, eerr := client.GetUserAccessToken(code)
+	if eerr != nil {
+		return c.JSON(http.StatusOK, eerr)
+	}
+	Logger.Debug("token response", zap.Any("token", userToken))
+	tokenModel := models.UserAccessToken{
+		AppId:       appid,
+		OpenId:      userToken.OpenId,
+		AccessToken: *userToken,
+	}
+	err := tokenModel.Upsert(Session)
+	if err != nil {
+		Logger.Error("token update mongo err", zap.Error(err))
+	}
+	if strings.Index(userToken.Scope, "snsapi_userinfo") >= 0 {
+		userInfo, eerr := client.GetUserInfoByToken(userToken)
+		if eerr != nil {
+			Logger.Error("Fetch userinfo error", zap.Any("error", eerr))
+			return c.JSON(http.StatusOK, eerr)
 		}
+		Logger.Debug("userinfo", zap.Any("user", userInfo))
+		infoModel := models.UserInfo{
+			AppId:  appid,
+			OpenId: userInfo.OpenId,
+			Info:   *userInfo,
+		}
+		err := infoModel.Upsert(Session)
+		if err != nil {
+			Logger.Error("info update mongo err", zap.Error(err))
+		}
+		return c.JSON(http.StatusOK, userInfo)
+	} else {
+		ret := map[string]string{
+			"openid": userToken.OpenId,
+		}
+		return c.JSON(http.StatusOK, ret)
 	}
 }

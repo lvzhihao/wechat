@@ -28,3 +28,5 @@ cert
 *.swa
 *.swp
 *.swo
+
+wechat.json

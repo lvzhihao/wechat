@@ -6,39 +6,49 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/labstack/echo"
 	"github.com/lvzhihao/wechat/utils"
 	"go.uber.org/zap"
 )
 
-func Proxy(w http.ResponseWriter, r *http.Request) {
+func Proxy(ctx echo.Context) error {
+	w := ctx.Response().Writer
+	r := ctx.Request()
+	appid := ctx.Get("appid")
+	client, ok := Clients[appid.(string)]
+	if !ok {
+		http.Error(w, errResult(-2, "not config client"), http.StatusInternalServerError)
+		return nil
+	}
+
 	sugar := Logger.Sugar()
 	requestId := utils.RandStringRunes(40)
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, errResult(-2, "not a hijacker"), http.StatusInternalServerError)
-		return
+		return nil
 	}
 
 	in, _, err := hj.Hijack()
 	if err != nil {
 		Logger.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 		http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-		return
+		return nil
 	}
 	defer in.Close()
 
 	r.URL.Scheme = "https"
 	r.URL.Host = "api.weixin.qq.com:443"
 	v := r.URL.Query()
-	v.Set("access_token", Client.FetchToken())
+	v.Set("access_token", client.FetchToken())
 	r.URL.RawQuery = v.Encode()
 
 	conn, err := net.Dial("tcp", r.URL.Host)
 	if err != nil {
 		Logger.Error("Proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 		http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-		return
+		return nil
 	}
 	defer conn.Close()
 
@@ -51,7 +61,7 @@ func Proxy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Logger.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 		http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
-		return
+		return nil
 	}
 
 	errc := make(chan error, 2)
@@ -68,4 +78,5 @@ func Proxy(w http.ResponseWriter, r *http.Request) {
 	if err != nil && err != io.EOF {
 		Logger.Error("proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
 	}
+	return nil
 }
