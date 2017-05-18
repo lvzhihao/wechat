@@ -11,37 +11,29 @@ import (
 )
 
 func Receive(ctx echo.Context) error {
-	w := ctx.Response().Writer
-	r := ctx.Request()
 	appid := ctx.Get("appid").(string)
 	token, ok := ReceiveTokens[appid]
 	if !ok {
-		http.NotFound(w, r)
-		return nil
+		return ctx.NoContent(http.StatusForbidden)
 	}
-	if core.ReceiveMsgCheckSign(token, r) {
-		q := r.URL.Query()
-		if q.Get("echostr") != "" {
-			w.Write([]byte(q.Get("echostr")))
-			return nil
+	if core.ReceiveMsgCheckSign(token, ctx.Request()) {
+		if ctx.QueryParam("echostr") != "" {
+			return ctx.String(http.StatusOK, ctx.QueryParam("echostr"))
 		} else {
-			data, err := ioutil.ReadAll(r.Body)
+			data, err := ioutil.ReadAll(ctx.Request().Body)
 			if err != nil {
 				Logger.Error("request body empty", zap.Error(err))
-				http.NotFound(w, r)
-				return nil
+				return ctx.NoContent(http.StatusNotFound)
 			} else {
 				Logger.Debug("request body ", zap.String("body", string(data)))
 				var msg core.Msg
 				err := xml.Unmarshal(data, &msg)
 				if err != nil {
 					Logger.Error("request body except", zap.Error(err))
-					http.NotFound(w, r)
-					return nil
+					return ctx.NoContent(http.StatusNotFound)
 				} else {
 					Logger.Debug("xml content", zap.Any("xml", msg))
-					w.Write(nil)
-					return nil
+					return ctx.String(http.StatusOK, "ignore")
 					//todo
 					/*
 							ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
@@ -64,7 +56,6 @@ func Receive(ctx echo.Context) error {
 			}
 		}
 	} else {
-		http.NotFound(w, r)
-		return nil
+		return ctx.NoContent(http.StatusForbidden)
 	}
 }

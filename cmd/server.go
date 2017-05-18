@@ -166,13 +166,13 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		// health check
 		e.Any("/health", server.Health)
 
+		// no check todo 安全回调域
+		e.GET("/connect/oauth2/callback", server.Oauth2Callback)
+
 		// check searchKeys
 		e.Any("/*", server.Proxy, CheckKeys) // api proxy
 		e.GET("/connect/oauth2/authorize", server.Oauth2Authorize, CheckKeys)
 		e.GET("/connect/oauth2/access_token", server.Oauth2AccessToken, CheckKeys)
-
-		// no check todo 安全回调域
-		e.GET("/connect/oauth2/callback", server.Oauth2Callback)
 
 		// receive
 		e.Any("/receive/:key", server.Receive, ChoiceKeys)
@@ -207,7 +207,7 @@ func ChoiceKeys(next echo.HandlerFunc) echo.HandlerFunc {
 		key := c.Param("key")
 		o, ok := searchKeys[key]
 		if !ok {
-			return c.NoContent(http.StatusNotFound)
+			return c.NoContent(http.StatusForbidden)
 		}
 		c.Set("appid", o.AppId)
 		return next(c)
@@ -220,10 +220,10 @@ func CheckKeys(next echo.HandlerFunc) echo.HandlerFunc {
 		secret := c.QueryParam("secret")
 		o, ok := searchKeys[key]
 		if !ok {
-			return c.NoContent(http.StatusNotFound)
+			return c.NoContent(http.StatusForbidden)
 		}
 		if o.Secret != secret {
-			return c.NoContent(http.StatusNotFound)
+			return c.NoContent(http.StatusForbidden)
 		}
 		c.Set("appid", o.AppId)
 		return next(c)

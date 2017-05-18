@@ -14,11 +14,10 @@ import (
 func Proxy(ctx echo.Context) error {
 	w := ctx.Response().Writer
 	r := ctx.Request()
-	appid := ctx.Get("appid")
-	client, ok := Clients[appid.(string)]
+	appid := ctx.Get("appid").(string)
+	client, ok := Clients[appid]
 	if !ok {
-		http.Error(w, errResult(-2, "not config client"), http.StatusInternalServerError)
-		return nil
+		return ctx.NoContent(http.StatusForbidden)
 	}
 
 	sugar := Logger.Sugar()
@@ -26,15 +25,13 @@ func Proxy(ctx echo.Context) error {
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		http.Error(w, errResult(-2, "not a hijacker"), http.StatusInternalServerError)
-		return nil
+		return ctx.JSON(http.StatusInternalServerError, errResult(-2, "not a hijacker"))
 	}
 
 	in, _, err := hj.Hijack()
 	if err != nil {
 		Logger.Error("Hijack error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-		http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-		return nil
+		return ctx.JSON(http.StatusInternalServerError, errResult(-2, "hijack error"))
 	}
 	defer in.Close()
 
@@ -47,8 +44,7 @@ func Proxy(ctx echo.Context) error {
 	conn, err := net.Dial("tcp", r.URL.Host)
 	if err != nil {
 		Logger.Error("Proxy error", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-		http.Error(w, errResult(-2, "hijack error"), http.StatusInternalServerError)
-		return nil
+		return ctx.JSON(http.StatusInternalServerError, errResult(-2, "hijack error"))
 	}
 	defer conn.Close()
 
@@ -60,8 +56,7 @@ func Proxy(ctx echo.Context) error {
 	err = r.Write(out)
 	if err != nil {
 		Logger.Error("Error copying request", zap.Any("url", r.URL), zap.Error(err), zap.String("request_id", requestId))
-		http.Error(w, errResult(-2, "error copying request"), http.StatusInternalServerError)
-		return nil
+		return ctx.JSON(http.StatusInternalServerError, errResult(-2, "error copying request"))
 	}
 
 	errc := make(chan error, 2)

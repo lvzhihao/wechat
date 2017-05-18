@@ -35,6 +35,6 @@ func errResult(code int, msg string) string {
 	return string(b)
 }
 
-func Health(c echo.Context) error {
-	return c.HTML(http.StatusOK, "ok")
+func Health(ctx echo.Context) error {
+	return ctx.HTML(http.StatusOK, "ok")
 }
