@@ -16,46 +16,43 @@ func Receive(ctx echo.Context) error {
 	if !ok {
 		return ctx.NoContent(http.StatusForbidden)
 	}
-	if core.ReceiveMsgCheckSign(token, ctx.Request()) {
-		if ctx.QueryParam("echostr") != "" {
-			return ctx.String(http.StatusOK, ctx.QueryParam("echostr"))
+	if !core.ReceiveMsgCheckSign(token, ctx.Request()) {
+		return ctx.NoContent(http.StatusForbidden)
+	}
+	if ctx.QueryParam("echostr") != "" {
+		return ctx.String(http.StatusOK, ctx.QueryParam("echostr"))
+	} else {
+		data, err := ioutil.ReadAll(ctx.Request().Body)
+		if err != nil {
+			Logger.Error("request body empty", zap.Error(err))
+			return ctx.NoContent(http.StatusNotFound)
 		} else {
-			data, err := ioutil.ReadAll(ctx.Request().Body)
+			Logger.Debug("request body ", zap.String("body", string(data)))
+			var msg core.Msg
+			err := xml.Unmarshal(data, &msg)
 			if err != nil {
-				Logger.Error("request body empty", zap.Error(err))
+				Logger.Error("request body except", zap.Error(err))
 				return ctx.NoContent(http.StatusNotFound)
 			} else {
-				Logger.Debug("request body ", zap.String("body", string(data)))
-				var msg core.Msg
-				err := xml.Unmarshal(data, &msg)
-				if err != nil {
-					Logger.Error("request body except", zap.Error(err))
-					return ctx.NoContent(http.StatusNotFound)
-				} else {
-					Logger.Debug("xml content", zap.Any("xml", msg))
-					return ctx.String(http.StatusOK, "ignore")
-					//todo
-					/*
-							ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
-								ToUserName:   msg.FromUserName,
-								FromUserName: msg.ToUserName,
-								CreateTime:   int(time.Now().Unix()),
-								MsgType:      "text",
-							}, Content: "replay test"}
-							b, err := xml.Marshal(ret)
-						if err != nil {
-							l.Error("msg reply error", zap.Error(err))
-							//retry todo
-							w.Write([]byte("success"))
-						} else {
-							l.Debug("msg reply", zap.String("xml", string(b)))
-							w.Write(b)
-						}
-					*/
-				}
+				Logger.Debug("xml content", zap.Any("xml", msg))
+				return ctx.String(http.StatusOK, "ignore")
+				//todo
+				//ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
+				//	ToUserName:   msg.FromUserName,
+				//	FromUserName: msg.ToUserName,
+				//	CreateTime:   int(time.Now().Unix()),
+				//	MsgType:      "text",
+				//}, Content: "replay test"}
+				//b, err := xml.Marshal(ret)
+				//if err != nil {
+				//	l.Error("msg reply error", zap.Error(err))
+				//	//retry todo
+				//	w.Write([]byte("success"))
+				//} else {
+				//	l.Debug("msg reply", zap.String("xml", string(b)))
+				//	w.Write(b)
+				//}
 			}
 		}
-	} else {
-		return ctx.NoContent(http.StatusForbidden)
 	}
 }
