@@ -80,7 +80,7 @@ func (c *Client) Token() string {
 func (c *Client) FetchToken() string {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.token.ExpiresIn > time.Now().Unix()-10 {
+	if c.token.ExpiresIn > time.Now().Unix()-10*60 {
 		c.RefreshToken()
 	}
 	return c.token.AccessToken
