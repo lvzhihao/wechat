@@ -74,6 +74,7 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 		if err != nil {
 			logger.Panic("mongo config error", zap.Error(err))
 		}
+		logger.Info("mongo dial success")
 		defer session.Close()
 
 		// ensure mongo index
@@ -94,6 +95,7 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 				if eerr != nil {
 					logger.Error("wechat config error", zap.Any("error", eerr))
 				} else {
+					logger.Info("wechat config success", zap.String("appid", config.AppId))
 					server.Clients[config.AppId] = client
 					server.ReceiveTokens[config.AppId] = config.ReceiveToken
 					searchKeys[config.Detail.Key] = &ServerKey{
