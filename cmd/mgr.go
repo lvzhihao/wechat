@@ -24,11 +24,13 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"os"
 
 	"go.uber.org/zap"
 	mgo "gopkg.in/mgo.v2"
 
 	"github.com/lvzhihao/wechat/models"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -81,6 +83,7 @@ func importConfig(s *mgo.Session) {
 				config.Create(s)
 				config.DetailEnsure(s)
 			}
+			log.Println("Import Success")
 		}
 	}
 }
@@ -90,9 +93,12 @@ func listConfig(s *mgo.Session) {
 	if err != nil {
 		log.Printf("ShowAll Error: %s\n", err)
 	} else {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"Name", "AppId", "Key", "Secret"})
 		for _, config := range list {
-			log.Println(config)
+			table.Append([]string{config.Name, config.AppId, config.Detail.Key, config.Detail.Secret})
 		}
+		table.Render() // Send output
 	}
 }
 

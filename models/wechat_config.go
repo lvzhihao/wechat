@@ -58,7 +58,7 @@ func (q *WechatConfig) DetailEnsure(s *mgo.Session) error {
 	return q.Save(s)
 }
 
-func (q *WechatConfig) Fetch(s *mgo.Session) error {
+func (q *WechatConfig) FetchByName(s *mgo.Session) error {
 	c := s.DB("").C("wechat_config")
 	err := c.Find(bson.M{"name": q.Name}).One(q)
 	return err
@@ -66,7 +66,7 @@ func (q *WechatConfig) Fetch(s *mgo.Session) error {
 
 func (q *WechatConfig) Save(s *mgo.Session) error {
 	c := s.DB("").C("wechat_config")
-	err := c.Update(bson.M{"name": q.Name}, q)
+	err := c.Update(bson.M{"appid": q.AppId}, q)
 	return err
 }
 
