@@ -35,7 +35,7 @@ func Receive(ctx echo.Context) error {
 				return ctx.NoContent(http.StatusNotFound)
 			} else {
 				Logger.Debug("xml content", zap.Any("xml", msg))
-				return ctx.String(http.StatusOK, "ignore")
+				return ctx.String(http.StatusOK, "")
 				//todo
 				//ret := &core.RetTextMsg{RetMsgComm: core.RetMsgComm{
 				//	ToUserName:   msg.FromUserName,
