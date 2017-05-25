@@ -22,8 +22,12 @@ type WechatConfig struct {
 	DeletedTime  time.Time          `bson:"deleted_time" json:"-"`
 }
 
+func (q WechatConfig) TableName() string {
+	return "wechat_config"
+}
+
 func WechatConfigEnusreConfig(s *mgo.Session) {
-	c := s.DB("").C("wechat_config")
+	c := s.DB("").C(WechatConfig{}.TableName())
 	c.EnsureIndex(mgo.Index{
 		Key:        []string{"name"},
 		Unique:     true,
@@ -59,19 +63,19 @@ func (q *WechatConfig) DetailEnsure(s *mgo.Session) error {
 }
 
 func (q *WechatConfig) FetchByName(s *mgo.Session) error {
-	c := s.DB("").C("wechat_config")
+	c := s.DB("").C(WechatConfig{}.TableName())
 	err := c.Find(bson.M{"name": q.Name}).One(q)
 	return err
 }
 
 func (q *WechatConfig) Save(s *mgo.Session) error {
-	c := s.DB("").C("wechat_config")
+	c := s.DB("").C(WechatConfig{}.TableName())
 	err := c.Update(bson.M{"appid": q.AppId}, q)
 	return err
 }
 
 func (q *WechatConfig) Create(s *mgo.Session) error {
-	c := s.DB("").C("wechat_config")
+	c := s.DB("").C(WechatConfig{}.TableName())
 	if q.Name == "" {
 		return errors.New("name empty")
 	}
@@ -80,7 +84,7 @@ func (q *WechatConfig) Create(s *mgo.Session) error {
 }
 
 func ListWechatConfig(s *mgo.Session) (list []*WechatConfig, err error) {
-	c := s.DB("").C("wechat_config")
+	c := s.DB("").C(WechatConfig{}.TableName())
 	err = c.Find(bson.M{}).Sort("created_time").All(&list)
 	return
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func UserInfoEnsureIndex(s *mgo.Session) {
-	c := s.DB("").C("user_info")
+	c := s.DB("").C(UserInfo{}.TableName())
 	c.EnsureIndex(mgo.Index{
 		Key:        []string{"appid", "openid"},
 		Unique:     true,
@@ -27,8 +27,12 @@ type UserInfo struct {
 	UpdatedTime time.Time     `bson:"updated_time" json:"-"`
 }
 
+func (q UserInfo) TableName() string {
+	return "user_info"
+}
+
 func (q *UserInfo) Upsert(s *mgo.Session) error {
-	c := s.DB("").C("user_info")
+	c := s.DB("").C(UserInfo{}.TableName())
 	q.UpdatedTime = time.Now() //updated time
 	_, err := c.Upsert(bson.M{"appid": q.AppId, "openid": q.OpenId}, q)
 	return err

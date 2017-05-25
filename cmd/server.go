@@ -103,6 +103,36 @@ wechat server --app_id=xxxx --app_secret=xxxx`,
 						Secret: config.Detail.Secret,
 						AppId:  config.AppId,
 					}
+					go func(client *core.Client) {
+						t := time.NewTimer(30 * time.Second)
+						for {
+							select {
+							case <-t.C:
+								count := 0
+								logger.Info("refersh start...", zap.String("appid", client.AppId()), zap.Any("time", time.Now()))
+								userTokenList, err := models.ListUserAccessToken(session)
+								if err != nil {
+									logger.Error("refresh error", zap.Error(err))
+								}
+								for _, userToken := range userTokenList {
+									newToken, eerr := client.RefreshUserAccessToken(userToken.AccessToken.RefreshToken)
+									if eerr != nil {
+										logger.Error("refresh error", zap.Any("error", eerr))
+									} else {
+										userToken.AccessToken = *newToken
+										if err := userToken.Upsert(session); err != nil {
+											logger.Error("refresh error", zap.Error(err))
+										} else {
+											logger.Debug("refresh success", zap.Any("token", userToken))
+											count++
+										}
+									}
+								}
+								logger.Info("refresh stop...", zap.String("appid", client.AppId()), zap.Any("time", time.Now()), zap.Int("count", count))
+								t.Reset(30 * time.Second)
+							}
+						}
+					}(client)
 				}
 			}
 		}

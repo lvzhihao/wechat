@@ -73,6 +73,10 @@ func New(config *ClientConfig) (*Client, *ClientError) {
 	}
 }
 
+func (c *Client) AppId() string {
+	return c.config.AppId
+}
+
 func (c *Client) Token() string {
 	return c.FetchToken()
 }
